@@ -59,7 +59,7 @@ jobs:
       - name: Terraform validate
         run: terraform validate
       - name: Switch to required workspace
-        run: terraform workspace select $WORKSPACE
+        run: terraform workspace select -or-create $WORKSPACE
         env:
           WORKSPACE: ${{ needs.resolve-env.outputs.env_name }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
