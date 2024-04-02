@@ -1,5 +1,8 @@
 name: Infrastructure - Plan and apply
 
+env:
+  package_name: gitops
+
 on:
   workflow_dispatch:
     inputs:
@@ -33,7 +36,7 @@ jobs:
       env_name: '${{ env.env_name }}'
 
   build:
-    name: Plan and deploy infrastructure
+    name: Deploy and Release
     runs-on: ubuntu-latest
     needs: [resolve-env]
     environment: ${{ needs.resolve-env.outputs.env_name }}
@@ -41,14 +44,18 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TF_IN_AUTOMATION: true
     steps:
+
       - name: Checkout
         uses: actions/checkout@v3
+
       - name: Configure terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.0
+
       - name: Terraform format
         run: terraform fmt -check -recursive
+
       - name: Terraform init
         run: terraform init
         env:
@@ -56,8 +63,10 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
       - name: Terraform validate
         run: terraform validate
+
       - name: Switch to required workspace
         run: terraform workspace select $WORKSPACE
         env:
@@ -66,6 +75,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
       - name: Terraform plan
         run: terraform plan
         env:
@@ -73,6 +83,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
       - name: Terraform apply
         if: github.event.pull_request.merged || github.event_name == 'workflow_dispatch'
         run: terraform apply --auto-approve
@@ -81,3 +92,48 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Setup semver bash
+        run: |
+          sudo curl https://raw.githubusercontent.com/fsaintjacques/semver-tool/3.0.0/src/semver -o /usr/local/bin/semver && sudo chmod +x /usr/local/bin/semver
+          semver --version
+      
+      - name: Get version
+        id: get-version
+        run: |
+          git fetch --tags
+          last_version=$(git tag --sort=-version:refname | grep -P "^$package_name@v\d+.\d+.\d+$" | head -n 1 | cut -d v -f 2)
+
+          if [ -z "$last_version" ]; then
+            new_version=1.0.0
+          elif [[ ${{ github.head_ref }} =~ ^"major" ]]; then
+            new_version=$(semver bump major "$last_version")
+          elif [[ ${{ github.head_ref }} =~ ^"feat" ]]; then
+            new_version=$(semver bump minor "$last_version")
+          else
+            new_version=$(semver bump patch "$last_version")
+          fi
+
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+      - name: Prepare artifact
+        id: prep
+        run: |
+          BUILD_NUM=$(echo $GITHUB_RUN_NUMBER)
+          BUILD_ID=$(echo $GITHUB_SHA | head -c7)
+
+          if [[ ${{ github.event.pull_request.merged }} == 'true' ]]; then
+            VERSION=${SCOPE}@v${RELEASE_VERSION}
+          else
+            VERSION=${SCOPE}@v${RELEASE_VERSION}+build.${BUILD_NUM}.${BUILD_ID}
+          fi
+
+          ARTIFACT_NAME=${VERSION}.zip
+          zip dist -r *.tf
+          mv dist.zip ${ARTIFACT_NAME}
+          ls -al
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "artifact_name=${ARTIFACT_NAME}" >> $GITHUB_OUTPUT
+        env:
+          SCOPE: ${{ matrix.scope }}
+          RELEASE_VERSION: ${{ steps.get-version.outputs.new_version }}
