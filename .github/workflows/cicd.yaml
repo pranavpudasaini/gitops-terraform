@@ -41,7 +41,7 @@ jobs:
     needs: [resolve-env]
     environment: ${{ needs.resolve-env.outputs.env_name }}
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
       TF_IN_AUTOMATION: true
     steps:
 
@@ -137,3 +137,23 @@ jobs:
         env:
           SCOPE: ${{ matrix.scope }}
           RELEASE_VERSION: ${{ steps.get-version.outputs.new_version }}
+
+      - name: Push Tag
+        if: github.event.pull_request.merged
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v5.6
+        with:
+          github_token: ${{ secrets.GH_TOKEN }}
+          custom_tag: ${{ steps.prep.outputs.version }}
+          tag_prefix: ""
+
+      - name: Create release
+        if: github.event.pull_request.merged
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GH_TOKEN }}"
+          prerelease: false
+          title: ${{ steps.prep.outputs.version }}
+          automatic_release_tag: ${{ steps.prep.outputs.version }}
+          files: |
+            ${{ steps.prep.outputs.artifact_name }}
