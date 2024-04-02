@@ -50,3 +50,7 @@ resource "aws_dynamodb_table" "tf_backend_bucket_state_lock" {
   }
 }
 
+resource "aws_codecommit_repository" "gitops_demo_repo" {
+  repository_name = var.devops_interns_repo_name
+  description     = "Created for \"GitOps with Terraform\" session"
+}

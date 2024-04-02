@@ -6,3 +6,6 @@ variable "tf_backend_bucket_name" {
   default = "lf-devops-gitops-terraform-state"
 }
 
+variable "devops_interns_repo_name" {
+  default = "gitops_demo_repo"
+}
